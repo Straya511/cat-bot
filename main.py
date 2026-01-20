@@ -6329,10 +6329,7 @@ async def roulette(message: discord.Interaction):
 
 
 @bot.tree.command(description="roll a dice")
-async def roll(message: discord.Interaction, sides: Optional[int]):
-    if sides is None:
-        sides = 6
-
+async def roll(message: discord.Interaction, sides: Optional[int] = 6):
     if sides < 0:
         await message.response.send_message("???", ephemeral=True)
         return
@@ -6341,7 +6338,7 @@ async def roll(message: discord.Interaction, sides: Optional[int]):
 
     if sides == 0:
         # ???
-        family_guy_funny_moments = [
+        FAMILY_GUY_FUNNY_MOMENTS = [
             "your sphere doesn't land",
             "your sphere floats in air",
             "your sphere lands and bounces forever",
@@ -6385,23 +6382,22 @@ async def roll(message: discord.Interaction, sides: Optional[int]):
             "your sphere finally peacefully lands on the table. you shed a (spherical) tear of happiness.",
         ]
 
-        if user.sphere_easter_egg < len(family_guy_funny_moments):
-            await message.response.send_message(family_guy_funny_moments[user.sphere_easter_egg], ephemeral=True)
+        if user.sphere_easter_egg < len(FAMILY_GUY_FUNNY_MOMENTS):
+            await message.response.send_message(FAMILY_GUY_FUNNY_MOMENTS[user.sphere_easter_egg], ephemeral=True)
             user.sphere_easter_egg += 1
             await user.save()
 
-            if user.sphere_easter_egg == len(family_guy_funny_moments):
+            if user.sphere_easter_egg == len(FAMILY_GUY_FUNNY_MOMENTS):
                 await achemb(message, "sphere_ach", "followup")
         else:
-            await message.response.send_message(random.choice(family_guy_funny_moments), ephemeral=True)
+            await message.response.send_message(random.choice(FAMILY_GUY_FUNNY_MOMENTS), ephemeral=True)
 
         return
 
     # loosely based on this wikipedia article
     # https://en.wikipedia.org/wiki/Dice
-    dice_names = {
+    DICE_NAMES = {
         1: '"dice"',
-        2: "coin",
         4: "tetrahedron",
         5: "triangular prism",
         6: "cube",
@@ -6424,20 +6420,17 @@ async def roll(message: discord.Interaction, sides: Optional[int]):
         120: "disdyakis triacontahedron",
     }
 
-    if sides in dice_names.keys():
-        dice = dice_names[sides]
-    else:
-        dice = f"d{sides}"
-
-    if sides == 2:
-        coinflipresult = random.randint(1, 2)
-        if coinflipresult == 2:
-            side = "tails"
-        else:
-            side = "heads"
-        await message.response.send_message(f"🪙 your coin lands on **{side}** ({coinflipresult})")
-    else:
+    if dice := DICE_NAMES.get(sides):
         await message.response.send_message(f"🎲 your {dice} lands on **{random.randint(1, sides)}**")
+
+    elif sides == 2:
+        coinflipresult = random.randint(1, 2)
+        side = ["", "heads", "tails"][coinflipresult]
+        await message.response.send_message(f"🪙 your coin lands on **{side}** ({coinflipresult})")
+    
+    else:
+        await message.response.send_message(f"🎲 your d{sides} lands on **{random.randint(1, sides)}**")
+
     await progress(message, user, "roll")
 
 
