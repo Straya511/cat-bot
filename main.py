@@ -8113,18 +8113,31 @@ async def leaderboards(
                 prog_perc = math.floor((100 / lv_xp_req) * i["progress"])
                 string += f"{current}. Level **{num}** *({prog_perc}%)*: <@{i['user_id']}>\n"
             else:
-                if type == "Slow":
-                    if num <= 0:
-                        break
-                    num = round(num / 3600, 2)
-                elif type == "Value":
+                if type == "Value":
                     if num <= 0:
                         break
                     num = round(num)
-                elif type == "Fast":
-                    if num >= 99999999999999:
+                elif type == "Fast" or type == "Slow":
+                    if num >= 99999999999999 or num <= 0:
                         break
-                    num = round(num, 3)
+                    if num >= 31536000:
+                        num = round(num / 31536000, 2)
+                        unit = "yrs"
+                    elif num >= 86400:
+                        num = round(num / 86400, 2)
+                        unit = "days"
+                    elif num >= 3600:
+                        num = round(num / 3600, 2)
+                        unit = "hrs"
+                    elif num >= 60:
+                        num = round(num / 60, 2)
+                        unit = "mins"
+                    elif num >= 1:
+                        num = round(num, 2)
+                        unit = "sec"
+                    else:
+                        num = round(num, 3)
+                        unit = "sec"
                 elif type in ["Cookies", "Cats", "Pig", "Prisms"] and num <= 0:
                     break
                 elif type == "Roulette Dollars" and num == 100:
