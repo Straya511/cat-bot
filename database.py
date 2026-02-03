@@ -1,5 +1,5 @@
 # Cat Bot - A Discord bot about catching cats.
-# Copyright (C) 2025 Lia Milenakos & Cat Bot Contributors
+# Copyright (C) 2026 Lia Milenakos & Cat Bot Contributors
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published
@@ -19,7 +19,7 @@ import config
 
 
 async def connect():
-    await catpg.connect(user="cat_bot", password=config.DB_PASS, database="cat_bot", host="127.0.0.1", max_size=25)
+    await catpg.connect(user="cat_bot", password=config.DB_PASS, database="cat_bot", host="127.0.0.1", max_size=25, timeout=1)
 
 
 async def close():
@@ -71,3 +71,7 @@ class Prism(catpg.Model):
 
 class Reminder(catpg.Model):
     pass
+
+
+class Server(catpg.Model):
+    _primary_key = "server_id"

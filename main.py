@@ -1,5 +1,5 @@
 # Cat Bot - A Discord bot about catching cats.
-# Copyright (C) 2025 Lia Milenakos & Cat Bot Contributors
+# Copyright (C) 2026 Lia Milenakos & Cat Bot Contributors
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published
@@ -25,6 +25,7 @@ import os
 import platform
 import random
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -46,7 +47,7 @@ from PIL import Image
 import config
 import msg2img
 from catpg import RawSQL
-from database import Channel, Prism, Profile, Reminder, User
+from database import Channel, Prism, Profile, Reminder, Server, User
 
 try:
     import exportbackup  # type: ignore
@@ -371,7 +372,7 @@ news_list = [
     {"title": "Cat Bot Survey - win rains!", "emoji": "📜"},
     {"title": "New Cat Rains perks!", "emoji": "✨"},
     {"title": "Cat Bot Christmas 2024", "emoji": "🎅"},
-    {"title": "Battlepass Update", "emoji": "⬆️"},
+    {"title": "Cattlepass Update", "emoji": "⬆️"},
     {"title": "Packs!", "emoji": "goldpack"},
     {"title": "Message from CEO of Cat Bot", "emoji": "finecat"},
     {"title": "Cat Bot Turns 3", "emoji": "🥳"},
@@ -520,7 +521,7 @@ async def generate_quest(user: Profile, quest_type: str):
 async def refresh_quests(user):
     await user.refresh_from_db()
     start_date = datetime.datetime(2024, 12, 1)
-    current_date = datetime.datetime.utcnow() + datetime.timedelta(hours=4)
+    current_date = discord.utils.utcnow() + datetime.timedelta(hours=4)
     full_months_passed = (current_date.year - start_date.year) * 12 + (current_date.month - start_date.month)
     if current_date.day < start_date.day:
         full_months_passed -= 1
@@ -964,7 +965,7 @@ async def background_loop():
 
     # temp_belated_storage cleanup
     # clean up anything older than 1 minute
-    baseflake = discord.utils.time_snowflake(datetime.datetime.utcnow() - datetime.timedelta(minutes=1))
+    baseflake = discord.utils.time_snowflake(discord.utils.utcnow() - datetime.timedelta(minutes=1))
     for id in temp_belated_storage.copy().keys():
         if id < baseflake:
             del temp_belated_storage[id]
@@ -1144,15 +1145,25 @@ async def background_loop():
         backupchannel = bot.get_partial_messageable(config.BACKUP_ID)
 
         if loop_count % 12 == 0:
-            backup_file = "/root/backup.dump"
+            backup_dir = "./backups"
+            backup_file = "./backup.dump"
             try:
-                # delete the previous backup file
-                os.remove(backup_file)
+                shutil.rmtree(backup_dir)
             except Exception:
                 pass
 
             try:
-                process = await asyncio.create_subprocess_shell(f"PGPASSWORD={config.DB_PASS} pg_dump -U cat_bot -Fc -Z 9 -f {backup_file} cat_bot")
+                os.remove(backup_file)
+            except Exception:
+                pass
+
+            if not os.path.exists(backup_dir):
+                os.makedirs(backup_dir)
+
+            try:
+                process = await asyncio.create_subprocess_shell(
+                    f"PGPASSWORD={config.DB_PASS} pg_basebackup -U cat_bot -h localhost -D {backup_dir} -F t -z -P --wal-method=stream && tar -zcvf {backup_file} {backup_dir}"
+                )
                 await process.wait()
 
                 if exportbackup:
@@ -1270,6 +1281,8 @@ async def on_message(message: discord.Message):
         else:
             await message.channel.send('good job! please send "lol_i_have_dmed_the_cat_bot_and_got_an_ach" in server to get your ach!')
         return
+
+    server = await Server.get_or_create(server_id=message.guild.id)
 
     achs = [
         ["cat?", "startswith", "???"],
@@ -1490,7 +1503,8 @@ async def on_message(message: discord.Message):
         if (vow_perc <= 3 and const_perc >= 6) or total_illegal >= 2:
             try:
                 if reactions_ratelimit.get(message.guild.id, 0) < 100:
-                    await message.add_reaction(get_emoji("staring_cat"))
+                    if server.do_reactions:
+                        await message.add_reaction(get_emoji("staring_cat"))
                     react_count += 1
                     reactions_ratelimit[message.guild.id] = reactions_ratelimit.get(message.guild.id, 0) + 1
                     logging.debug("Reaction added: %s", "staring_cat")
@@ -1610,7 +1624,8 @@ async def on_message(message: discord.Message):
                 resolved_emoji = reaction_name
 
             try:
-                await message.add_reaction(resolved_emoji)
+                if server.do_reactions:
+                    await message.add_reaction(resolved_emoji)
                 react_count += 1
                 reactions_ratelimit[message.guild.id] = reactions_ratelimit.get(message.guild.id, 0) + 1
                 logging.debug("Reaction added: %s", reaction_name)
@@ -1635,8 +1650,9 @@ async def on_message(message: discord.Message):
             logging.debug("Response sent: %s", response_reply)
 
     try:
-        if message.author in message.mentions and reactions_ratelimit.get(message.guild.id, 0) < 100:
-            await message.add_reaction(get_emoji("staring_cat"))
+        if message.author in message.mentions and message.type != discord.MessageType.poll_result and reactions_ratelimit.get(message.guild.id, 0) < 100:
+            if server.do_reactions:
+                await message.add_reaction(get_emoji("staring_cat"))
             react_count += 1
             reactions_ratelimit[message.guild.id] = reactions_ratelimit.get(message.guild.id, 0) + 1
             logging.debug("Reaction added: %s", "staring_cat")
@@ -1717,7 +1733,8 @@ async def on_message(message: discord.Message):
             # (except if rain is active, we dont have perms or channel isnt setupped, or we laughed way too much already)
             if channel and channel.cat_rains == 0 and pointlaugh_ratelimit.get(message.channel.id, 0) < 10:
                 try:
-                    await message.add_reaction(get_emoji("pointlaugh"))
+                    if server.do_reactions:
+                        await message.add_reaction(get_emoji("pointlaugh"))
                     pointlaugh_ratelimit[message.channel.id] = pointlaugh_ratelimit.get(message.channel.id, 0) + 1
                 except Exception:
                     pass
@@ -2058,27 +2075,21 @@ async def on_message(message: discord.Message):
                     prism_which_boosted.catches_boosted += 1
                     asyncio.create_task(prism_which_boosted.save())
                     logging.debug("Boosted from %s", le_emoji)
+                    idx_shift = 0
                     try:
                         le_old_emoji = le_emoji
                         if double_boost:
-                            le_emoji = cattypes[cattypes.index(le_emoji) + 2]
+                            idx_shift = cattypes.index(le_emoji) + 2
                         else:
-                            le_emoji = cattypes[cattypes.index(le_emoji) + 1]
+                            idx_shift = cattypes.index(le_emoji) + 1
+                        le_emoji = cattypes[idx_shift]
                         normal_bump = True
                     except IndexError:
-                        # :SILENCE:
-                        # This block handles cases where boosting goes beyond the maximum cat rarity (eGirl).
-                        # Previously, a check `if double_boost and le_emoji == 'eGirl'` ensured only eGirl triggered the mega-rain.
-                        # This was removed so that ANY double boost that fails (e.g., Ultimate -> Index+2) also triggers the 1200 boost.
                         normal_bump = False
                         if not channel.forcespawned:
-                            if double_boost:
-                                # rainboost is the duration of the rain in seconds.
-                                # 1200 seconds = 20 minutes of rain.
-                                # This rewards the player for a "failed" double boost on a high-tier cat (Ultimate or eGirl).
+                            if idx_shift == len(cattypes) + 1:
                                 rainboost = 1200
-                            else:
-                                # 600 seconds = 10 minutes of rain.
+                            elif idx_shift == len(cattypes):
                                 rainboost = 600
                             logging.debug("Boosted to rain: %d", rainboost)
                             channel.cat_rains += math.ceil(rainboost / 2.75)
@@ -2101,10 +2112,9 @@ async def on_message(message: discord.Message):
                         else:
                             suffix_string += f"\n{get_emoji('prism')} {boost_applied_prism} boosted this catch from a {get_emoji(le_old_emoji.lower() + 'cat')} {le_old_emoji} cat!"
                     elif not channel.forcespawned:
-                        if double_boost:
-                            suffix_string += f"\n{get_emoji('prism')} {boost_applied_prism} tried to boost this catch, but failed! A 20m rain will start!"
-                        else:
-                            suffix_string += f"\n{get_emoji('prism')} {boost_applied_prism} tried to boost this catch, but failed! A 10m rain will start!"
+                        suffix_string += (
+                            f"\n{get_emoji('prism')} {boost_applied_prism} tried to boost this catch, but failed! A {rainboost // 60}m rain will start!"
+                        )
 
                 icon = get_emoji(le_emoji.lower() + "cat")
 
@@ -2536,7 +2546,7 @@ async def help(message):
             inline=False,
         )
         .set_footer(
-            text=f"Cat Bot by Milenakos, {datetime.datetime.utcnow().year}",
+            text=f"Cat Bot by Milenakos, {discord.utils.utcnow().year}",
             icon_url="https://wsrv.nl/?url=raw.githubusercontent.com/milenakos/cat-bot/main/images/cat.png",
         )
     )
@@ -2700,22 +2710,22 @@ async def news(message: discord.Interaction):
             await interaction.edit_original_response(view=view)
         elif news_id == 3:
             embed = Container(
-                "## Battlepass is getting an update!",
+                "## Cattlepass is getting an update!",
                 """### qhar?
 - Huge stuff!
-- Battlepass will now reset every month
+- Cattlepass will now reset every month
 - You will have 3 quests, including voting
 - They refresh 12 hours after completing
 - Quest reward is XP which goes towards progressing
-- There are 30 battlepass levels with much better rewards (even Ultimate cats and Rain minutes!)
-- Prism crafting/true ending no longer require battlepass progress.
+- There are 30 cattlepass levels with much better rewards (even Ultimate cats and Rain minutes!)
+- Prism crafting/true ending no longer require cattlepass progress.
 - More fun stuff to do each day and better rewards!
 
 ### oh no what if i hate grinding?
-Don't worry, quests are very easy and to complete the battlepass you will need to complete less than 3 easy quests a day.
+Don't worry, quests are very easy and to complete the cattlepass you will need to complete less than 3 easy quests a day.
 
-### will you sell paid battlepass? its joever
-There are currently no plans to sell a paid battlepass.""",
+### will you sell paid cattlepass? its joever
+There are currently no plans to sell a paid cattlepass.""",
                 "-# <t:1735689601>",
             )
             view.add_item(embed)
@@ -3288,6 +3298,15 @@ async def getid(message: discord.Interaction, thing: discord.User | discord.Role
     await message.response.send_message(f"The ID of {thing.mention} is {thing.id}\nyou can use it in /changemessage like this: `{thing.mention}`")
 
 
+@bot.tree.command(description="(ADMIN) enable/disable cat bot's reactions")
+@discord.app_commands.default_permissions(manage_guild=True)
+async def togglereactions(message: discord.Interaction):
+    server = await Server.get_or_create(server_id=message.guild.id)
+    server.do_reactions = not server.do_reactions
+    await server.save()
+    await message.response.send_message(f"ok, {'enabled' if server.do_reactions else 'disabled'} reactions in this server.")
+
+
 @bot.tree.command(description="Get Daily cats")
 async def daily(message: discord.Interaction):
     await message.response.send_message("there is no daily cats why did you even try this")
@@ -3569,7 +3588,7 @@ async def gen_inventory(message, person_id):
 
     embedVar = discord.Embed(
         title=f"{emoji_prefix}{person_id.name.replace('_', r'\_')}",
-        description=f"{highlighted_stat[1]} {highlighted_stat[2]}\n{get_emoji('ach')} Achievements: {unlocked}/{total_achs}{minus_achs}\n⬆️ Battlepass Level {person.battlepass} ({person.progress}/{needed_xp} XP)",
+        description=f"{highlighted_stat[1]} {highlighted_stat[2]}\n{get_emoji('ach')} Achievements: {unlocked}/{total_achs}{minus_achs}\n⬆️ Cattlepass Level {person.battlepass} ({person.progress}/{needed_xp} XP)",
         color=discord.Colour.from_str(color),
     )
 
@@ -4571,7 +4590,7 @@ async def battlepass(message: discord.Interaction):
         await user.refresh_from_db()
 
         # season end
-        now = datetime.datetime.utcnow() + datetime.timedelta(hours=4)
+        now = discord.utils.utcnow() + datetime.timedelta(hours=4)
 
         if now.month == 12:
             next_month = datetime.datetime(now.year + 1, 1, 1)
@@ -4891,6 +4910,12 @@ async def ping(message: discord.Interaction):
         await message.response.send_message(f"🏓 cat has brain delay of {latency} ms {get_emoji('staring_cat')}")
     user = await Profile.get_or_create(guild_id=message.guild.id, user_id=message.user.id)
     await progress(message, user, "ping")
+
+
+@bot.tree.command(description="the most useful command ever")
+async def bruh(message: discord.Interaction):
+    await message.response.defer()
+    await message.delete_original_response()
 
 
 @bot.tree.command(description="play a relaxing game of tic tac toe")
@@ -7922,7 +7947,7 @@ async def catch(message: discord.Interaction, msg: discord.Message):
 @discord.app_commands.autocomplete(cat_type=lb_type_autocomplete)
 async def leaderboards(
     message: discord.Interaction,
-    leaderboard_type: Optional[Literal["Cats", "Value", "Fast", "Slow", "Battlepass", "Cookies", "Pig", "Roulette Dollars", "Prisms"]],
+    leaderboard_type: Optional[Literal["Cats", "Value", "Fast", "Slow", "Cattlepass", "Cookies", "Pig", "Roulette Dollars", "Prisms"]],
     cat_type: Optional[str],
     locked: Optional[bool],
 ):
@@ -8001,9 +8026,9 @@ async def leaderboards(
             unit = "h"
             result = await Profile.collect_limit(["user_id", "timeslow"], "guild_id = $1 AND timeslow > 0 ORDER BY timeslow DESC", message.guild.id)
             final_value = "timeslow"
-        elif type == "Battlepass":
+        elif type == "Cattlepass":
             start_date = datetime.datetime(2024, 12, 1)
-            current_date = datetime.datetime.utcnow() + datetime.timedelta(hours=4)
+            current_date = discord.utils.utcnow() + datetime.timedelta(hours=4)
             full_months_passed = (current_date.year - start_date.year) * 12 + (current_date.month - start_date.month)
             bp_season = battle["seasons"][str(full_months_passed)]
             if current_date.day < start_date.day:
@@ -8052,7 +8077,7 @@ async def leaderboards(
             if position["user_id"] == interaction.user.id:
                 interactor_placement = index + 1
                 interactor = position[final_value]
-                if type == "Battlepass":
+                if type == "Cattlepass":
                     if position[final_value] >= len(bp_season):
                         lv_xp_req = 1500
                     else:
@@ -8061,7 +8086,7 @@ async def leaderboards(
             if interaction.user != message.user and position["user_id"] == message.user.id:
                 messager_placement = index + 1
                 messager = position[final_value]
-                if type == "Battlepass":
+                if type == "Cattlepass":
                     if position[final_value] >= len(bp_season):
                         lv_xp_req = 1500
                     else:
@@ -8105,7 +8130,7 @@ async def leaderboards(
         for i in result[:show_amount]:
             num = i[final_value]
 
-            if type == "Battlepass":
+            if type == "Cattlepass":
                 if i[final_value] >= len(bp_season):
                     lv_xp_req = 1500
                 else:
@@ -8158,12 +8183,12 @@ async def leaderboards(
             interactor_line = ""
             messager_line = ""
             if include_interactor:
-                if type == "Battlepass":
+                if type == "Cattlepass":
                     interactor_line = f"{interactor_placement}\\. Level **{interactor}** *({interactor_perc}%)*: {interaction.user.mention}\n"
                 else:
                     interactor_line = f"{interactor_placement}\\. {emoji} **{interactor:,}** {unit}: {interaction.user.mention}\n"
             if include_messager:
-                if type == "Battlepass":
+                if type == "Cattlepass":
                     messager_line = f"{messager_placement}\\. Level **{messager}** *({messager_perc}%)*: {message.user.mention}\n"
                 else:
                     messager_line = f"{messager_placement}\\. {emoji} **{messager:,}** {unit}: {message.user.mention}\n"
@@ -8213,7 +8238,7 @@ async def leaderboards(
             "Value": "🧮",
             "Fast": "⏱️",
             "Slow": "💤",
-            "Battlepass": "⬆️",
+            "Cattlepass": "⬆️",
             "Cookies": "🍪",
             "Pig": "🎲",
             "Roulette Dollars": "💰",
