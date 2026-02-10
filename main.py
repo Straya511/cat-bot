@@ -2473,10 +2473,11 @@ async def on_guild_join(guild):
         """Checks that the supplied channel isn't None and that it has send_message permissions"""
         return channel and channel.permissions_for(guild.me).send_messages
     
-    def find(patt, channels):
-        for i in channels:
-            if patt in i.name:
-                return i
+    def find(pattern: str, channels: list[discord.TextChannel]) -> discord.TextChannel:
+        """Searches supplied channels and returns the first channel that matches the pattern"""
+        for channel in channels:
+            if pattern in channel.name:
+                return channel
 
     logging.debug("Guild joined, member count %d", guild.member_count)
 
