@@ -2469,9 +2469,10 @@ async def on_message(message: discord.Message):
 
 # the message when cat gets added to a new server
 async def on_guild_join(guild):
-    def verify(ch):
-        return ch and ch.permissions_for(guild.me).send_messages
-
+    def verify(channel: discord.TextChannel):
+        """Checks that the supplied channel isn't None and that it has send_message permissions"""
+        return channel and channel.permissions_for(guild.me).send_messages
+    
     def find(patt, channels):
         for i in channels:
             if patt in i.name:
