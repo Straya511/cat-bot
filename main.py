@@ -2482,22 +2482,24 @@ async def on_guild_join(guild):
     logging.debug("Guild joined, member count %d", guild.member_count)
 
     # first to try a good channel, then whenever we cat atleast chat
-    ch = find("cat", guild.text_channels)
-    if not verify(ch):
-        ch = find("bot", guild.text_channels)
-    if not verify(ch):
-        ch = find("commands", guild.text_channels)
-    if not verify(ch):
-        ch = find("general", guild.text_channels)
+    patterns = ["cat", "bot", "commands", "general"]
+    suitable_channel = None
+    for pattern in patterns:
+        channel = find(pattern, guild.text_channels)
+        if verify(channel):
+            suitable_channel = channel
+            break
 
-    found = False
-    if not verify(ch):
-        for ch in guild.text_channels:
-            if verify(ch):
-                found = True
+    else:
+        # if we dont find a match we check all channels for validity
+        for channel in guild.text_channels:
+            if verify(channel):
+                suitable_channel = channel
                 break
-        if not found:
-            ch = guild.owner
+
+        # if we dont find any channels to be suitable we dm the owner
+        else:
+            suitable_channel = guild.owner
 
     # you are free to change/remove this, its just a note for general user letting them know
     unofficial_note = "**NOTE: This is an unofficial Cat Bot instance.**\n\n"
