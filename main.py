@@ -2501,19 +2501,23 @@ async def on_guild_join(guild):
         else:
             suitable_channel = guild.owner
 
-    # you are free to change/remove this, its just a note for general user letting them know
-    unofficial_note = "**NOTE: This is an unofficial Cat Bot instance.**\n\n"
-    if not bot.user or bot.user.id == 966695034340663367:
-        unofficial_note = ""
-    try:
-        if ch.permissions_for(guild.me).send_messages:
-            await ch.send(
-                unofficial_note
-                + "Thanks for adding me!\nTo start, use `/setup` and `/help` to learn more!\nJoin the support server here: https://discord.gg/staring\nHave a nice day :)"
-            )
-    except Exception:
-        pass
+    welcome_message = """\
+                    Thanks for adding me!
+                    To start, use `/setup` and `/help` to learn more!
+                    Join the support server here: https://discord.gg/staring
+                    Have a nice day :)
+                      """.replace("    ", "")
 
+    # you are free to change/remove this, its just a note for general user letting them know
+    if not bot.user or bot.user.id == 966695034340663367:
+        unofficial_note = "**NOTE: This is an unofficial Cat Bot instance.**\n\n"
+        welcome_message = unofficial_note + welcome_message
+
+    try:
+        if suitable_channel.permissions_for(guild.me).send_messages:
+            await suitable_channel.send(welcome_message)
+    except:
+        pass
 
 @bot.tree.command(description="Learn to use the bot")
 async def help(message):
