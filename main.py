@@ -2516,7 +2516,7 @@ async def on_guild_join(guild: discord.Guild):
     try:
         if suitable_channel.permissions_for(guild.me).send_messages:
             await suitable_channel.send(welcome_message)
-    except:
+    except BaseException:
         pass
 
 @bot.tree.command(description="Learn to use the bot")
