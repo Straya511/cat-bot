@@ -2499,7 +2499,18 @@ async def on_guild_join(guild: discord.Guild):
 
         # if we dont find any channels to be suitable we dm the owner
         else:
-            suitable_channel = guild.owner
+            # This is a hacky way to tell if you can dm the owner
+            try:
+                dm_channel = guild.owner.create_dm()
+                await suitable_channel.send()
+
+            except discord.errors.HTTPException as error:
+                if error.status == 400:
+                    suitable_channel = dm_channel
+
+            except discord.errors.Forbidden:
+                # We're kind of cooked and can't send a message to the owner
+                return
 
     welcome_message = """\
                     Thanks for adding me!
