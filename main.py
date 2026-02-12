@@ -2510,6 +2510,7 @@ async def on_guild_join(guild: discord.Guild):
 
             except discord.errors.Forbidden:
                 # We're kind of cooked and can't send a message to the owner
+                logging.debug(f"Failed to Send Welcome Message in {guild.id}")
                 return
 
     welcome_message = """\
