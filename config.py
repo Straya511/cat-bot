@@ -14,17 +14,20 @@ DB_PASS = os.environ["psql_password"]
 # dsn of a sentry-compatible service for error logging
 SENTRY_DSN = os.environ.get("sentry_dsn")
 
-# top.gg vote webhook verification key, setting this to None disables all voting stuff
+# top.gg vote webhook verification secret, setting this to None disables all voting stuff
 WEBHOOK_VERIFY = os.environ.get("webhook_verify")
 
-# top.gg api token to occasionally post stats
+# top.gg legacy api token to occasionally post stats
 TOP_GG_TOKEN = os.environ.get("top_gg_token")
+
+# top.gg modern token to post commands and fallback votes
+TOP_GG_MODERN_TOKEN = os.environ.get("top_gg_modern_token")
 
 # wordnik api key for /define command
 WORDNIK_API_KEY = os.environ.get("wordnik_api_key")
 
 # only post stats if server count is above this, to prevent wrong stats
-MIN_SERVER_SEND = 125_000
+MIN_SERVER_SEND = 175_000
 
 # channel id for db backups, private extremely recommended
 BACKUP_ID = 1060545763194707998

@@ -19,7 +19,7 @@ import config
 
 
 async def connect():
-    await catpg.connect(user="cat_bot", password=config.DB_PASS, database="cat_bot", host="127.0.0.1", max_size=25, timeout=1)
+    await catpg.connect(user="cat_bot", password=config.DB_PASS, database="cat_bot", host="127.0.0.1", max_size=50)
 
 
 async def close():
@@ -75,3 +75,19 @@ class Reminder(catpg.Model):
 
 class Server(catpg.Model):
     _primary_key = "server_id"
+
+
+class Order(catpg.Model):
+    pass
+
+
+class PriceHistory(catpg.Model):
+    pass
+
+
+class PortfolioHistory(catpg.Model):
+    pass
+
+
+class Reward(catpg.Model):
+    _primary_key = "ticker"

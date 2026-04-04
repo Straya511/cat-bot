@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2026 Lia Milenakos
+# Copyright (c) 2026 Lia Milenakos & Cat Bot Contributors
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -22,6 +22,7 @@
 
 # this is a KISS wrapper i made for asyncpg
 
+from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, TypeVar
 
 import asyncpg
@@ -39,6 +40,13 @@ async def close():
         await pool.close()
 
 
+@asynccontextmanager
+async def transaction():
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            yield conn
+
+
 # this is used in limit() to distinguish between raw SQL and column names
 class RawSQL(str):
     pass
@@ -51,10 +59,14 @@ class Model:
     _primary_key = "id"
     _capped_ints = []
 
-    def __init__(self, record: asyncpg.Record):
+    def __init__(self, record: asyncpg.Record, connection: asyncpg.Connection | None = None):
         # init model from asyncpg Record
         self.__dirty_values = []
         self.__values = dict(record.items())
+        if connection is not None:
+            self._connection = connection
+        else:
+            self._connection = pool
 
     # setter sugar
     def __setattr__(self, name: str, value) -> None:
@@ -87,10 +99,10 @@ class Model:
 
     async def delete(self) -> None:
         table = self.__class__.__name__.lower()
-        query_string = f'DELETE FROM "{table}" WHERE {self._primary_key} = $1;'
-        await pool.execute(query_string, self.__values[self._primary_key])
+        query_string = f'DELETE FROM "{table}" WHERE "{self._primary_key}" = $1;'
+        await self._connection.execute(query_string, self.__values[self._primary_key])
         self.__dirty_values = []
-        self.__values = []
+        self.__values = {}
 
     async def save(self) -> None:
         table = self.__class__.__name__.lower()
@@ -109,18 +121,22 @@ class Model:
         query_string += ", ".join(changes)
 
         # show where to write
-        query_string += f" WHERE {self._primary_key} = ${var_counter};"
+        query_string += f' WHERE "{self._primary_key}" = ${var_counter};'
         args.append(self.__values[self._primary_key])
 
         # run the query
-        await pool.execute(query_string, *args)
+        await self._connection.execute(query_string, *args)
         self.__dirty_values = []
 
     @classmethod
-    async def _get(cls, fields: None | list[str | RawSQL] = None, **kwargs) -> asyncpg.Record:
+    async def _get(cls, connection: asyncpg.Connection | None = None, fields: None | list[str | RawSQL] = None, **kwargs) -> asyncpg.Record:
         table = cls.__name__.lower()
         select = "*"
+        if not connection:
+            connection = pool
+
         if fields:
+            fields = fields.copy()
             if cls._primary_key not in fields:
                 fields.append(cls._primary_key)
             select = ", ".join(i if i.__class__.__name__ == "RawSQL" else f'"{i}"' for i in fields)
@@ -132,10 +148,16 @@ class Model:
         for i in kwargs.keys():
             changes.append(f'"{i}" = ${var_counter}')
             var_counter += 1
-        query_string += " AND ".join(changes) + " LIMIT 1;"
+        query_string += " AND ".join(changes)
+
+        # lock row if in transaction
+        if connection is not None:
+            query_string += " LIMIT 1 FOR UPDATE;"
+        else:
+            query_string += " LIMIT 1;"
 
         # run the query
-        return await pool.fetchrow(query_string, *kwargs.values())
+        return await connection.fetchrow(query_string, *kwargs.values())
 
     async def refresh_from_db(self) -> None:
         args = {self._primary_key: self.__values[self._primary_key]}
@@ -158,9 +180,11 @@ class Model:
             return None
 
     @classmethod
-    async def get_or_create(cls, **kwargs) -> ModelInstance:
+    async def get_or_create(cls, connection: asyncpg.Connection | None = None, **kwargs) -> ModelInstance:
         table = cls.__name__.lower()
-        values = kwargs.values()
+        values = list(kwargs.values())
+        if not connection:
+            connection = pool
 
         # build column names and placeholders
         columns = list(kwargs.keys())
@@ -174,28 +198,39 @@ class Model:
         query_string = f'INSERT INTO "{table}" ({column_names}) VALUES ({placeholders}) ON CONFLICT ({column_names}) DO UPDATE SET {updates} RETURNING *;'
 
         # run the query and return the result
-        result = await pool.fetchrow(query_string, *values)
-        return cls(result)
+        result = await connection.fetchrow(query_string, *values)
+
+        # lock row if in transaction
+        if connection is not None:
+            pk_field = cls._primary_key
+            lock_query = f'SELECT * FROM "{table}" WHERE "{pk_field}" = $1 FOR UPDATE;'
+            result = await connection.fetchrow(lock_query, result[pk_field])
+
+        return cls(result, connection=connection)
 
     @classmethod
-    async def create(cls, **kwargs) -> None:
+    async def create(cls, connection: asyncpg.Connection | None = None, **kwargs) -> ModelInstance:
         table = cls.__name__.lower()
-        values = kwargs.values()
+        values = list(kwargs.values())
+
+        if not connection:
+            connection = pool
 
         query_string = f'INSERT INTO "{table}" ('
         var_counter = 1
 
-        # add the search parameters
+        # add the column names
         changes = []
         for i in kwargs.keys():
-            changes.append(i)
+            changes.append(f'"{i}"')
             var_counter += 1
         query_string += ", ".join(changes) + ") VALUES ("
 
         # add the var numbers
         changes2 = ["$" + str(i) for i in range(1, var_counter)]
-        query_string += ", ".join(changes2) + ");"
-        await pool.execute(query_string, *values)
+        query_string += ", ".join(changes2) + ") RETURNING *;"
+        result = await connection.fetchrow(query_string, *values)
+        return cls(result, connection=connection)
 
     @classmethod
     async def filter(
@@ -287,9 +322,9 @@ class Model:
         var_counter = 1
         change = []
         for col in columns:
-            change.append(f"{col} = ${var_counter}")
+            change.append(f'"{col}" = ${var_counter}')
             var_counter += 1
-        query += ", ".join(change) + f" WHERE {cls._primary_key} = ${var_counter};"
+        query += ", ".join(change) + f' WHERE "{cls._primary_key}" = ${var_counter};'
 
         # prepare the data
         data = []
